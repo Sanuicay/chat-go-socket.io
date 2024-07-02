@@ -48,3 +48,13 @@ ALTER TABLE message_status ADD FOREIGN KEY (message_id) REFERENCES messages(id);
 ALTER TABLE message_status ADD FOREIGN KEY (receiver_id) REFERENCES users(id);
 ALTER TABLE chat_users ADD FOREIGN KEY (chat_id) REFERENCES chat(id);
 ALTER TABLE chat_users ADD FOREIGN KEY (user_id) REFERENCES users(id);
+
+
+-- Insert data into users table
+INSERT INTO users (name) VALUES ('User_1'), ('User_2'), ('User_3'), ('User_4');
+
+-- Insert data into chat table
+INSERT INTO chat (name, is_group) VALUES ('Private Chat', FALSE), ('Group Chat', TRUE);
+
+-- Insert data into chat_users table
+INSERT INTO chat_users (chat_id, user_id) VALUES (1, 1), (1, 2), (2, 1), (2, 2), (2, 3), (2, 4);

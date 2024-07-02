@@ -2,11 +2,11 @@ package main
 
 import (
 	"database/sql"
-	// "time"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -19,12 +19,18 @@ var db *sql.DB
 type User struct {
 	ID       int    `json:"id"`
 	Username string `json:"username"`
-	Password string `json:"password"`
 }
+
+type Connection struct {
+	Name      string `json:"name"`
+	SessionID string `json:"sessionId"`
+}
+
+var connectedUsers = make(map[string]string)
 
 func main() {
 	var err error
-	db, err := sql.Open("mysql", "root:@tcp(127.0.0.1:3306)/messaging_app")
+	db, err = sql.Open("mysql", "root:@tcp(127.0.0.1:3306)/messaging_app")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -39,7 +45,6 @@ func main() {
 
 	io := socket.NewServer(nil, nil)
 
-	// Add CORS middleware
 	c := cors.New(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:3000"},
 		AllowCredentials: true,
@@ -58,80 +63,30 @@ func main() {
 
 	io.On("connection", func(clients ...any) {
 		client := clients[0].(*socket.Socket)
-		log.Println("Client connected")
+		handshake := client.Handshake()
+		sessionID := handshake.Query["sessionID"]
+		name := handshake.Query["name"]
 
-		client.On("message", func(datas ...any) {
-			msg := datas[0].(string)
-			log.Println("Received message:", msg)
-			client.Emit("reply", "received "+msg)
+		if len(sessionID) == 0 || len(name) == 0 {
+			log.Println("Missing sessionID or name")
+			client.Disconnect(true)
+			return
+		}
 
-			//save the message to the message table
-			_, err = db.Exec("INSERT INTO messages (user_id, message) VALUES (?, ?)", 1, msg)
-			if err != nil {
-				log.Println(err)
-			} else {
-				log.Println("Message saved:", msg)
-			}
-		})
+		connectedUsers[sessionID[0]] = name[0]
+		log.Printf("User connected: %s (SessionID: %s)\n", name[0], sessionID[0])
+		addorUpdateUser(name[0])
 
-		client.On("register", func(datas ...any) {
-			dataMap := datas[0].(map[string]interface{})
-			username := dataMap["username"].(string)
-			password := dataMap["password"].(string)
-			log.Println("Received register:", username, password)
+		// List all online users
+		onlineUsers := listOnlineUsers()
+		log.Printf("Online users: %s\n", onlineUsers)
 
-			//save the user to the user table
-			_, err = db.Exec("INSERT INTO users (username, password) VALUES (?, ?)", username, password)
-			if err != nil {
-				log.Println(err)
-				client.Emit("registerReply", "Error saving user: "+username)
-			} else {
-				log.Println("User saved:", username, password)
-				client.Emit("registerReply", "User saved: "+username)
-			}
-		})
-
-		client.On("login", func(datas ...any) {
-			dataMap := datas[0].(map[string]interface{})
-			username := dataMap["username"].(string)
-			password := dataMap["password"].(string)
-			log.Println("Received login:", username, password)
-			var user User
-			err = db.QueryRow("SELECT password FROM users WHERE username = ?", username).Scan(&user.Password)
-			if err != nil {
-				log.Println(err)
-				client.Emit("loginReply", "User not found: "+username)
-			} else {
-				log.Println("User found:", username)
-				if user.Password == password {
-					log.Println("User logged in:", username)
-					client.Emit("loginReplySuccess", "User logged in: "+username)
-				} else {
-					log.Println("User not logged in:", username)
-					client.Emit("loginReplyFail", "User not logged in: "+username)
-				}
-			}
-		})
-
-		client.On("getMessages", func(datas ...any) {
-			rows, err := db.Query("SELECT message FROM messages")
-			if err != nil {
-				log.Println(err)
-			} else {
-				for rows.Next() {
-					var message string
-					err = rows.Scan(&message)
-					if err != nil {
-						log.Println(err)
-					} else {
-						log.Println("Message:", message)
-						client.Emit("message", message)
-					}
-				}
-			}
-		})
 		client.On("disconnect", func(...any) {
-			log.Println("Client disconnected")
+			log.Printf("User disconnected: %s (SessionID: %s)\n", name[0], sessionID[0])
+			updateUserStatus(name[0], false)
+			delete(connectedUsers, sessionID[0])
+			onlineUsers := listOnlineUsers()
+			log.Printf("Online users: %s\n", onlineUsers)
 		})
 	})
 
@@ -151,4 +106,55 @@ func main() {
 	<-exit
 	io.Close(nil)
 	os.Exit(0)
+}
+
+// if not exist, add user to users table (is_online equal True), else update the user is_online value to True
+func addorUpdateUser(name string) {
+	var user User
+	err := db.QueryRow("SELECT id, name FROM users WHERE name = ?", name).Scan(&user.ID, &user.Username)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			_, err := db.Exec("INSERT INTO users (name, is_online) VALUES (?, ?)", name, true)
+			if err != nil {
+				log.Println(err)
+			}
+		} else {
+			log.Println(err)
+		}
+	} else {
+		updateUserStatus(name, true)
+	}
+}
+
+// change the bool value is_online in users table
+func updateUserStatus(name string, status bool) {
+	_, err := db.Exec("UPDATE users SET is_online = ? WHERE name = ?", status, name)
+	if err != nil {
+		log.Println(err)
+	}
+}
+
+// list all online users as a string "(3) user1, user2, user3"
+func listOnlineUsers() string {
+	var (
+		onlineUsers      string
+		onlineUsersCount int
+	)
+	onlineUsersCount = 0
+	rows, err := db.Query("SELECT name FROM users WHERE is_online = ?", true)
+	if err != nil {
+		log.Println(err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var user string
+		onlineUsersCount++
+		err := rows.Scan(&user)
+		if err != nil {
+			log.Println(err)
+		}
+		onlineUsers += "(" + strconv.Itoa(onlineUsersCount) + ") " + user + " "
+	}
+	return onlineUsers
 }
