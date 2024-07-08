@@ -14,7 +14,7 @@ CREATE TABLE users (
 CREATE TABLE messages (
     id INT PRIMARY KEY AUTO_INCREMENT,
     sender_id INT NOT NULL,
-    is_group_message BOOLEAN DEFAULT FALSE,
+    chat_id INT,
     message TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -44,6 +44,7 @@ CREATE TABLE chat_users (
 
 -- Foreign key constraints
 ALTER TABLE messages ADD FOREIGN KEY (sender_id) REFERENCES users(id);
+ALTER TABLE messages ADD FOREIGN KEY (chat_id) REFERENCES chat(id);
 ALTER TABLE message_status ADD FOREIGN KEY (message_id) REFERENCES messages(id);
 ALTER TABLE message_status ADD FOREIGN KEY (receiver_id) REFERENCES users(id);
 ALTER TABLE chat_users ADD FOREIGN KEY (chat_id) REFERENCES chat(id);
@@ -58,3 +59,17 @@ INSERT INTO chat (name, is_group) VALUES ('Private Chat', FALSE), ('Group Chat',
 
 -- Insert data into chat_users table
 INSERT INTO chat_users (chat_id, user_id) VALUES (1, 1), (1, 2), (2, 1), (2, 2), (2, 3), (2, 4);
+
+-- -- Search for groups that a user is a member of, then show the names and id of the groups
+-- SELECT chat.id, chat.name
+-- FROM chat
+-- JOIN chat_users ON chat.id = chat_users.chat_id
+-- WHERE chat_users.user_id = 1;
+
+-- Insert data into messages table
+INSERT INTO messages (sender_id, chat_id, message) VALUES (1, 1, 'Hello, how are you?'), (2, 1, 'I am good, thank you!'), (1, 2, 'Hello everyone!'), (2, 2, 'Hi!'), (3, 2, 'Hey there!'), (4, 2, 'Hello!');
+
+-- SEARCH for messages in a private chat between two users, then show the message and the sender's name with time and the total amount of messages
+SELECT messages.message, users.name AS sender_name, messages.created_at FROM messages JOIN users ON messages.sender_id = users.id WHERE messages.chat_id = ?;
+
+

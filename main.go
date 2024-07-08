@@ -81,6 +81,58 @@ func main() {
 		onlineUsers := listOnlineUsers()
 		log.Printf("Online users: %s\n", onlineUsers)
 
+		client.On("ShowUsersChat", func(...any) {
+			rows, err := db.Query("SELECT chat.id, chat.name FROM chat JOIN chat_users ON chat.id = chat_users.chat_id WHERE chat_users.user_id = (SELECT id FROM users WHERE name = ?)", name[0])
+			if err != nil {
+				log.Println(err)
+			}
+			defer rows.Close()
+
+			for rows.Next() {
+				var chatID int
+				var chatName string
+				err := rows.Scan(&chatID, &chatName)
+				if err != nil {
+					log.Println(err)
+				}
+				client.Emit("ShowUsersChatReply", chatID, chatName)
+			}
+		})
+
+		client.On("ShowMessages", func(chatID ...any) {
+			rows, err := db.Query("SELECT messages.message, users.name AS sender_name, messages.created_at FROM messages JOIN users ON messages.sender_id = users.id WHERE messages.chat_id = ?;", chatID[0])
+			if err != nil {
+				log.Println(err)
+			}
+			defer rows.Close()
+
+			for rows.Next() {
+				var message string
+				var sender string
+				var createdAt string
+				err := rows.Scan(&message, &sender, &createdAt)
+				if err != nil {
+					log.Println(err)
+				}
+				client.Emit("ShowMessagesReply", message, sender, createdAt)
+			}
+		})
+
+		// socket.emit('SendMessage', name, chatid, message);
+		client.On("SendMessage", func(args ...interface{}) {
+			name := args[0].(string)
+			chatID := args[1].(string)
+			message := args[2].(string)
+
+			_, err := db.Exec("INSERT INTO messages (chat_id, sender_id, message) VALUES (?, (SELECT id FROM users WHERE name = ?), ?)", chatID, name, message)
+			if err != nil {
+				log.Println(err)
+				client.Emit("SendMessageReply", "Failed to send message")
+			} else {
+				client.Emit("SendMessageReply", "Message sent")
+			}
+		})
+
 		client.On("disconnect", func(...any) {
 			log.Printf("User disconnected: %s (SessionID: %s)\n", name[0], sessionID[0])
 			updateUserStatus(name[0], false)
@@ -158,3 +210,10 @@ func listOnlineUsers() string {
 	}
 	return onlineUsers
 }
+
+// func setEveryoneOffline() {
+// 	_, err := db.Exec("UPDATE users SET is_online = ?", false)
+// 	if err != nil {
+// 		log.Println(err)
+// 	}
+// }

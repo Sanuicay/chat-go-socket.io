@@ -6,9 +6,20 @@
     <title>Chat Room</title>
 </head>
 <body>
-    <div id="chat-box"></div>
-    <input type="text" id="message" placeholder="Type a message">
-    <button onclick="sendMessage()">Send</button>
+    <!-- a side bar for list of chat -->
+    <div id="chat-sidebar">
+        <h3>Chat List</h3>
+        <ul id="ChatList"></ul>
+    </div>
+    <!-- a chat box for chat, with chat history-->
+    <div id="chat-box">
+        <h3>Messages</h3>
+        <div id="chat-content">
+            <!-- a box-->
+        </div>
+        <input type="text" id="chat-message" placeholder="Type your message here">
+        <button onclick="sendMessage()">Send</button>
+    </div>
     <script src="/js/socket.io.min.js"></script>
     <script src="js/main.js"></script>
 </body>
