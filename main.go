@@ -1,20 +1,23 @@
 package main
 
 import (
+	"context"
 	"database/sql"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/redis/go-redis/v9"
 	"github.com/rs/cors"
-	"github.com/zishang520/socket.io/v2/socket"
+	socketio "github.com/zishang520/socket.io/v2/socket"
 )
-
-var db *sql.DB
 
 type User struct {
 	ID       int    `json:"id"`
@@ -26,7 +29,20 @@ type Connection struct {
 	SessionID string `json:"sessionId"`
 }
 
+type Message struct {
+	ChatID  string    `json:"chatId"`
+	Sender  string    `json:"sender"`
+	Content string    `json:"content"`
+	Time    time.Time `json:"time"`
+}
+
 var connectedUsers = make(map[string]string)
+
+var (
+	db          *sql.DB
+	redisClient *redis.Client
+	io          *socketio.Server
+)
 
 func main() {
 	var err error
@@ -43,7 +59,7 @@ func main() {
 		log.Println("Database connected")
 	}
 
-	io := socket.NewServer(nil, nil)
+	io = socketio.NewServer(nil, nil)
 
 	c := cors.New(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:3000"},
@@ -61,10 +77,31 @@ func main() {
 		}
 	}()
 
+	opt, err := redis.ParseURL("redis://my-redis:@127.0.0.1:6379/0")
+	if err != nil {
+		panic(err)
+	}
+
+	redisClient = redis.NewClient(opt)
+
+	pong, err := redisClient.Ping(context.Background()).Result()
+	if err != nil {
+		log.Println(err)
+	} else {
+		log.Println("Redis connected", pong)
+	}
+
+	go processMessageQueue()
+
 	io.On("connection", func(clients ...any) {
-		client := clients[0].(*socket.Socket)
+		client := clients[0].(*socketio.Socket)
 		handshake := client.Handshake()
 		sessionID := handshake.Query["sessionID"]
+		if len(sessionID) == 0 {
+			log.Println("Missing sessionID")
+			client.Disconnect(true)
+			return
+		}
 		name := handshake.Query["name"]
 
 		if len(sessionID) == 0 || len(name) == 0 {
@@ -81,7 +118,7 @@ func main() {
 		onlineUsers := listOnlineUsers()
 		log.Printf("Online users: %s\n", onlineUsers)
 
-		client.On("ShowUsersChat", func(...any) {
+		client.On("ShowUsersChat", func(args ...any) {
 			rows, err := db.Query("SELECT chat.id, chat.name FROM chat JOIN chat_users ON chat.id = chat_users.chat_id WHERE chat_users.user_id = (SELECT id FROM users WHERE name = ?)", name[0])
 			if err != nil {
 				log.Println(err)
@@ -97,6 +134,12 @@ func main() {
 				}
 				client.Emit("ShowUsersChatReply", chatID, chatName)
 			}
+		})
+
+		client.On("JoinChatRoom", func(clients ...any) {
+			chatID := clients[0].(string)
+			client.Join(socketio.Room(chatID))
+			log.Printf("A user joined chat room: %s\n", chatID)
 		})
 
 		client.On("ShowMessages", func(chatID ...any) {
@@ -119,18 +162,26 @@ func main() {
 		})
 
 		// socket.emit('SendMessage', name, chatid, message);
-		client.On("SendMessage", func(args ...interface{}) {
+		client.On("SendMessage", func(args ...any) {
 			name := args[0].(string)
 			chatID := args[1].(string)
 			message := args[2].(string)
 
-			_, err := db.Exec("INSERT INTO messages (chat_id, sender_id, message) VALUES (?, (SELECT id FROM users WHERE name = ?), ?)", chatID, name, message)
-			if err != nil {
-				log.Println(err)
-				client.Emit("SendMessageReply", "Failed to send message")
-			} else {
-				client.Emit("SendMessageReply", "Message sent")
+			msg := Message{
+				ChatID:  chatID,
+				Sender:  name,
+				Content: message,
+				Time:    time.Now(),
 			}
+
+			msgJSON, _ := json.Marshal(msg)
+			// Publish the message
+			if _, err := redisClient.Publish(context.Background(), "message_queue", chatID+":"+string(msgJSON)).Result(); err != nil {
+				log.Println("Error publishing message:", err)
+				client.Emit("SendMessageReply", "Failed to send message")
+				return
+			}
+			client.Emit("SendMessageReply", "Message sent")
 		})
 
 		client.On("disconnect", func(...any) {
@@ -139,6 +190,7 @@ func main() {
 			delete(connectedUsers, sessionID[0])
 			onlineUsers := listOnlineUsers()
 			log.Printf("Online users: %s\n", onlineUsers)
+
 		})
 	})
 
@@ -149,6 +201,7 @@ func main() {
 		for s := range SignalC {
 			switch s {
 			case os.Interrupt, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT:
+				setEveryoneOffline()
 				close(exit)
 				return
 			}
@@ -186,7 +239,6 @@ func updateUserStatus(name string, status bool) {
 	}
 }
 
-// list all online users as a string "(3) user1, user2, user3"
 func listOnlineUsers() string {
 	var (
 		onlineUsers      string
@@ -211,9 +263,63 @@ func listOnlineUsers() string {
 	return onlineUsers
 }
 
-// func setEveryoneOffline() {
-// 	_, err := db.Exec("UPDATE users SET is_online = ?", false)
-// 	if err != nil {
-// 		log.Println(err)
-// 	}
-// }
+func setEveryoneOffline() {
+	_, err := db.Exec("UPDATE users SET is_online = ?", false)
+	if err != nil {
+		log.Println(err)
+	}
+}
+
+func processMessageQueue() {
+	ctx := context.Background()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	pubsub := redisClient.Subscribe(ctx, "message_queue")
+	defer pubsub.Close()
+
+	ch := pubsub.Channel()
+	for msg := range ch {
+		// Check for empty messages
+		if msg.Payload == "" {
+			log.Println("Empty message received from queue")
+			continue
+		}
+
+		// Split the message to extract the chat ID and JSON data
+		chatID, msgJSON, found := strings.Cut(msg.Payload, ":")
+		if !found {
+			log.Println("Invalid message format in queue:", msg.Payload)
+			continue
+		}
+
+		// Check for empty message JSON after extraction
+		if msgJSON == "" {
+			log.Println("Empty message JSON received from queue:", msg.Payload)
+			continue
+		}
+
+		// Validate the JSON before unmarshalling
+		if !json.Valid([]byte(msgJSON)) {
+			log.Println("Invalid JSON message received from queue:", msg.Payload)
+			continue
+		}
+
+		// Unmarshal message
+		var msg Message
+		if err := json.Unmarshal([]byte(msgJSON), &msg); err != nil {
+			log.Println("Error unmarshalling message:", err)
+			continue
+		}
+
+		// Insert message into database
+		_, err := db.Exec("INSERT INTO messages (chat_id, sender_id, message, created_at) VALUES (?, (SELECT id FROM users WHERE name = ?), ?, ?)", msg.ChatID, msg.Sender, msg.Content, msg.Time)
+		if err != nil {
+			log.Println("Error inserting message:", err)
+			continue
+		}
+
+		// Emit the message to the relevant room
+		io.To(socketio.Room(chatID)).Emit("NewMessage", msg.Sender, msg.Content, msg.Time.Format(time.DateTime))
+	}
+}

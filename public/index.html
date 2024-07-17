@@ -11,6 +11,19 @@
         <input type="text" id="name" required>
         <button onclick="startChat()">Start Chat</button>
     </div>
+    <script>
+        window.onload = function() {
+            const sessionID = localStorage.getItem('sessionID');
+            const name = localStorage.getItem('name');
+        
+            if (sessionID && name) {
+            // Redirect to chat.html if session data exists
+            window.location.href = 'chat.html';
+            } else {
+            // Load index.html if no session data
+            }
+        }
+    </script>
     <script src="js/main.js"></script>
 </body>
 </html>

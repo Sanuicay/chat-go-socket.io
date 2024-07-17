@@ -1,5 +1,4 @@
 // main.js
-
 function startChat() {
     const name = document.getElementById('name').value;
     if (name.trim() !== '') {
@@ -29,6 +28,12 @@ function initializeChat() {
 
         socket.on('connect', () => {
             console.log('Connected to server');
+            const urlParams = new URLSearchParams(window.location.search);
+            const chatId = urlParams.get('chatid');
+            if (chatId) {
+                socket.emit("JoinChatRoom", chatId);  // Send event to server to join the room
+                console.log("Joined room:", chatId);
+            }
         });
 
         socket.on('disconnect', () => {
@@ -47,10 +52,17 @@ function initializeChat() {
             });
         });
 
+        const messageInput = document.getElementById("chat-message");
+        const chatContent = document.getElementById("chat-content");
+    
+        socket.on("NewMessage", (sender, message, createdAt) => {
+            console.log("New message received: ", sender, message, createdAt);
+            addMessageToChat(sender, message, createdAt, false);
+        });
+
         const urlParams = new URLSearchParams(window.location.search);
         const chatid = urlParams.get('chatid');
         const chatname = urlParams.get('chatname');
-        const chatContent = document.getElementById("chat-content");
         chatContent.innerHTML = "";
 
         if (chatid && chatname) {
@@ -62,7 +74,6 @@ function initializeChat() {
 
                 ChatMessage.forEach((msg) => {
                     const div = document.createElement('div');
-                    // div.innerHTML = `<p><b>${msg.sender}</b>: ${msg.message}</p><p>${msg.createdAt}</p>`;
                     if (msg.sender === name) {
                         div.innerHTML = `<p><b>You</b>: ${msg.message}</p><p>${msg.createdAt}</p>`;
                     }
@@ -73,25 +84,75 @@ function initializeChat() {
                 });
             });
 
+            function addMessageToChat(sender, message, createdAt, isPending, tempMessageId = null) {
+                // Check for duplicates
+                const existingMessage = Array.from(chatContent.querySelectorAll('.message, .pending-message'))
+                    .find(el => el.querySelector('p:first-child').textContent.includes(message));
+
+                if (existingMessage) {
+                    if (isPending) {
+                        updateMessageStatus(existingMessage.id, message, createdAt);
+                    }
+                    return; 
+                }
+
+                const div = document.createElement("div");
+                div.classList.add(isPending ? "pending-message" : "message");
+                if (tempMessageId) {
+                    div.id = tempMessageId;
+                }
+
+                const messageContent = `
+                    <p><b>${sender === name ? "You" : sender}</b>: ${message}</p>
+                    ${isPending ? "" : `<p class="timestamp">${createdAt}</p>`}
+                `;
+
+                div.innerHTML = messageContent;
+                chatContent.appendChild(div);
+                chatContent.scrollTop = chatContent.scrollHeight; 
+            }
+            
+            
+            function updateMessageStatus(tempMessageId, message, newContent, isError = false) {
+                const messageElement = document.getElementById(tempMessageId);
+                if (messageElement) {
+                    messageElement.classList.remove("pending-message");
+            
+                    // Set message class based on error status
+                    messageElement.classList.add(isError ? "error-message" : "message"); 
+            
+                    // Update the message content and add timestamp
+                    messageElement.querySelector("p:first-child").textContent = `${messageElement.querySelector("p:first-child").textContent.split(':')[0]}: ${message}`;
+                    if (!isError) {
+                        messageElement.innerHTML += `<p class="timestamp">${newContent}</p>`;
+                    }
+                }
+            }
+
             // Send message
             window.sendMessage = () => {
-                const message = document.getElementById('chat-message').value;
-                if (message.trim() !== '') {
-                    socket.emit('SendMessage', name, chatid, message);
-                    document.getElementById('chat-message').value = '';
-                    socket.on('SendMessageReply', (msg) => {
-                        if (msg == 'Message sent'){
-                            //reload the page
-                            window.location.href = 'chat.html?chatid=' + chatid + '&chatname=' + chatname;
-                        }
-                        else {
-                            alert('Message not sent');
+                const message = messageInput.value.trim();
+                if (message !== "") {
+                    // Optimistically display the message
+                    const tempMessageId = 'temp_' + Date.now(); // Temporary ID for the optimistic message
+                    addMessageToChat(name, message, "", true, tempMessageId);
+                    messageInput.value = "";
+        
+                    socket.emit("SendMessage", name, chatid, message);
+        
+                    socket.once("SendMessageReply", (reply) => {
+                        if (reply === "Message sent") {
+                            // Replace temporary message with the real message once confirmed
+                            updateMessageStatus(tempMessageId, message, new Date().toLocaleString(), false); 
+                        } else {
+                            // Handle error by updating the UI (e.g., display an error message)
+                            updateMessageStatus(tempMessageId, message, "Failed to send", true);
                         }
                     });
                 } else {
-                    alert('Please enter a message');
+                    alert("Please enter a message");
                 }
-            }
+            };
         } else {
             document.getElementById('chat-content').innerHTML = "Please select a chat to view messages."
         }
@@ -101,3 +162,4 @@ function initializeChat() {
 if (window.location.pathname === '/chat.html') {
     initializeChat();
 }
+
