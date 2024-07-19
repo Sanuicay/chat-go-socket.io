@@ -46,6 +46,8 @@ var (
 
 func main() {
 	var err error
+
+	//connect to MySQL database
 	db, err = sql.Open("mysql", "root:@tcp(127.0.0.1:3306)/messaging_app")
 	if err != nil {
 		log.Fatal(err)
@@ -59,8 +61,10 @@ func main() {
 		log.Println("Database connected")
 	}
 
+	// Create a new socket.io server
 	io = socketio.NewServer(nil, nil)
 
+	// Create a new CORS handler
 	c := cors.New(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:3000"},
 		AllowCredentials: true,
@@ -77,6 +81,7 @@ func main() {
 		}
 	}()
 
+	// Connect to Redis
 	opt, err := redis.ParseURL("redis://my-redis:@127.0.0.1:6379/0")
 	if err != nil {
 		panic(err)
@@ -91,8 +96,10 @@ func main() {
 		log.Println("Redis connected", pong)
 	}
 
+	// Call the message queue process function
 	go processMessageQueue()
 
+	// Handle incoming connections
 	io.On("connection", func(clients ...any) {
 		client := clients[0].(*socketio.Socket)
 		handshake := client.Handshake()
@@ -161,7 +168,6 @@ func main() {
 			}
 		})
 
-		// socket.emit('SendMessage', name, chatid, message);
 		client.On("SendMessage", func(args ...any) {
 			name := args[0].(string)
 			chatID := args[1].(string)
@@ -194,6 +200,7 @@ func main() {
 		})
 	})
 
+	// Handle shutdown signals
 	exit := make(chan struct{})
 	SignalC := make(chan os.Signal, 1)
 	signal.Notify(SignalC, os.Interrupt, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
@@ -213,7 +220,6 @@ func main() {
 	os.Exit(0)
 }
 
-// if not exist, add user to users table (is_online equal True), else update the user is_online value to True
 func addorUpdateUser(name string) {
 	var user User
 	err := db.QueryRow("SELECT id, name FROM users WHERE name = ?", name).Scan(&user.ID, &user.Username)
@@ -231,7 +237,6 @@ func addorUpdateUser(name string) {
 	}
 }
 
-// change the bool value is_online in users table
 func updateUserStatus(name string, status bool) {
 	_, err := db.Exec("UPDATE users SET is_online = ? WHERE name = ?", status, name)
 	if err != nil {
