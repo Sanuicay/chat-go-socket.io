@@ -6,7 +6,8 @@
     -- Create table for users
     CREATE TABLE users (
         id INT PRIMARY KEY AUTO_INCREMENT,
-        name VARCHAR(100) NOT NULL,
+        name VARCHAR(100) NOT NULL UNIQUE,
+        password VARCHAR(255) NOT NULL,
         is_online BOOLEAN DEFAULT FALSE
     );
 

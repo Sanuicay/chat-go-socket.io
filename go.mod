@@ -4,6 +4,7 @@ go 1.22.2
 
 require (
 	github.com/go-sql-driver/mysql v1.8.1
+	github.com/redis/go-redis/v9 v9.5.3
 	github.com/rs/cors v1.11.0
 	github.com/zishang520/socket.io/v2 v2.2.0
 )
@@ -22,15 +23,11 @@ require (
 	github.com/quic-go/qpack v0.4.0 // indirect
 	github.com/quic-go/quic-go v0.44.0 // indirect
 	github.com/quic-go/webtransport-go v0.8.0 // indirect
-	github.com/redis/go-redis/v9 v9.5.3 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	github.com/xo/terminfo v0.0.0-20210125001918-ca9a967f8778 // indirect
-	github.com/zishang520/engine.io v1.5.9 // indirect
 	github.com/zishang520/engine.io-go-parser v1.2.5 // indirect
 	github.com/zishang520/engine.io/v2 v2.1.1 // indirect
-	github.com/zishang520/socket.io v1.3.2 // indirect
-	github.com/zishang520/socket.io-go-parser v1.0.4 // indirect
 	github.com/zishang520/socket.io-go-parser/v2 v2.1.0 // indirect
 	go.uber.org/mock v0.4.0 // indirect
 	golang.org/x/crypto v0.24.0 // indirect

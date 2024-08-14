@@ -29,11 +29,24 @@ function initializeChat() {
         socket.on('connect', () => {
             console.log('Connected to server');
             const urlParams = new URLSearchParams(window.location.search);
-            const chatId = urlParams.get('chatid');
-            if (chatId) {
-                socket.emit("JoinChatRoom", chatId);  // Send event to server to join the room
-                console.log("Joined room:", chatId);
-            }
+            // const chatId = urlParams.get('chatid');
+            // if (chatId) {
+            //     socket.emit("JoinChatRoom", chatId, name);  // Send event to server to join the room
+            //     console.log("Joined room:", chatId, name);
+            // }
+            socket.emit('JoinChatRoom', name);
+
+            const requestNotificationButton = document.getElementById('requestNotificationButton'); // Assuming you have a button with this ID
+
+            requestNotificationButton.addEventListener('click', () => {
+                if (Notification.permission !== 'granted') {
+                    Notification.requestPermission().then(function (permission) {
+                        if (permission === "granted") {
+                            console.log("Notification permission granted.");
+                        }
+                    });
+                }
+            });
         });
 
         socket.on('disconnect', () => {
@@ -55,9 +68,27 @@ function initializeChat() {
         const messageInput = document.getElementById("chat-message");
         const chatContent = document.getElementById("chat-content");
     
-        socket.on("NewMessage", (sender, message, createdAt) => {
-            console.log("New message received: ", sender, message, createdAt);
-            addMessageToChat(sender, message, createdAt, false);
+        socket.on("NewMessage", (sender, message, createdAt, chatId) => { 
+            const urlParams = new URLSearchParams(window.location.search);
+            const currentChatId = urlParams.get('chatid');
+            const user_name = localStorage.getItem('name');
+        
+            if (currentChatId !== chatId && user_name !== sender) { // Use the chatId argument directly
+                // Display a notification if permission is granted
+                if (Notification.permission === "granted") {
+                    var notification = new Notification("New Message from " + sender, {
+                        body: message,
+                    });
+        
+                    notification.onclick = function() {
+                        // Redirect to the chat room when the notification is clicked
+                        window.location.href = 'chat.html?chatid=' + chatId; 
+                    };
+                }
+            } else {
+                // User is in the correct chat room, display the message normally
+                addMessageToChat(sender, message, createdAt, false);
+            }
         });
 
         const urlParams = new URLSearchParams(window.location.search);
@@ -128,7 +159,6 @@ function initializeChat() {
                     }
                 }
             }
-
             // Send message
             window.sendMessage = () => {
                 const message = messageInput.value.trim();

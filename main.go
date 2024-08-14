@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -47,7 +48,7 @@ var (
 func main() {
 	var err error
 
-	//connect to MySQL database
+	// Connect to MySQL database
 	db, err = sql.Open("mysql", "root:@tcp(127.0.0.1:3306)/messaging_app")
 	if err != nil {
 		log.Fatal(err)
@@ -104,11 +105,13 @@ func main() {
 		client := clients[0].(*socketio.Socket)
 		handshake := client.Handshake()
 		sessionID := handshake.Query["sessionID"]
+
 		if len(sessionID) == 0 {
 			log.Println("Missing sessionID")
 			client.Disconnect(true)
 			return
 		}
+
 		name := handshake.Query["name"]
 
 		if len(sessionID) == 0 || len(name) == 0 {
@@ -119,7 +122,7 @@ func main() {
 
 		connectedUsers[sessionID[0]] = name[0]
 		log.Printf("User connected: %s (SessionID: %s)\n", name[0], sessionID[0])
-		addorUpdateUser(name[0])
+		addOrUpdateUser(name[0])
 
 		// List all online users
 		onlineUsers := listOnlineUsers()
@@ -144,9 +147,24 @@ func main() {
 		})
 
 		client.On("JoinChatRoom", func(clients ...any) {
-			chatID := clients[0].(string)
-			client.Join(socketio.Room(chatID))
-			log.Printf("A user joined chat room: %s\n", chatID)
+			name := clients[0].(string)
+			// search for chatid that "name" is in
+			rows, err := db.Query("SELECT chat.id, chat.name FROM chat JOIN chat_users ON chat.id = chat_users.chat_id WHERE chat_users.user_id = (SELECT id FROM users WHERE name = ?)", name)
+			if err != nil {
+				log.Println(err)
+			}
+			defer rows.Close()
+			//join the chat rooms
+			for rows.Next() {
+				var chatID int
+				var chatName string
+				err := rows.Scan(&chatID, &chatName)
+				if err != nil {
+					log.Println(err)
+				}
+				client.Join(socketio.Room(strconv.Itoa(chatID)))
+				log.Printf("User %s joined chat room %s\n", name, chatName)
+			}
 		})
 
 		client.On("ShowMessages", func(chatID ...any) {
@@ -181,14 +199,21 @@ func main() {
 			}
 
 			msgJSON, _ := json.Marshal(msg)
+
 			// Publish the message
 			if _, err := redisClient.Publish(context.Background(), "message_queue", chatID+":"+string(msgJSON)).Result(); err != nil {
 				log.Println("Error publishing message:", err)
 				client.Emit("SendMessageReply", "Failed to send message")
 				return
 			}
+
 			client.Emit("SendMessageReply", "Message sent")
 		})
+
+		// client.On("CreateChat", func(args ...any) {
+		// 	chatName := args[0].(string)
+		// 	is_group := args[1].(bool)
+			
 
 		client.On("disconnect", func(...any) {
 			log.Printf("User disconnected: %s (SessionID: %s)\n", name[0], sessionID[0])
@@ -196,7 +221,6 @@ func main() {
 			delete(connectedUsers, sessionID[0])
 			onlineUsers := listOnlineUsers()
 			log.Printf("Online users: %s\n", onlineUsers)
-
 		})
 	})
 
@@ -204,6 +228,7 @@ func main() {
 	exit := make(chan struct{})
 	SignalC := make(chan os.Signal, 1)
 	signal.Notify(SignalC, os.Interrupt, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+
 	go func() {
 		for s := range SignalC {
 			switch s {
@@ -220,7 +245,7 @@ func main() {
 	os.Exit(0)
 }
 
-func addorUpdateUser(name string) {
+func addOrUpdateUser(name string) {
 	var user User
 	err := db.QueryRow("SELECT id, name FROM users WHERE name = ?", name).Scan(&user.ID, &user.Username)
 	if err != nil {
@@ -249,6 +274,7 @@ func listOnlineUsers() string {
 		onlineUsers      string
 		onlineUsersCount int
 	)
+
 	onlineUsersCount = 0
 	rows, err := db.Query("SELECT name FROM users WHERE is_online = ?", true)
 	if err != nil {
@@ -265,6 +291,7 @@ func listOnlineUsers() string {
 		}
 		onlineUsers += "(" + strconv.Itoa(onlineUsersCount) + ") " + user + " "
 	}
+
 	return onlineUsers
 }
 
@@ -322,6 +349,11 @@ func processMessageQueue() {
 		if err != nil {
 			log.Println("Error inserting message:", err)
 			continue
+		}
+
+		notification := fmt.Sprintf("Message \"%s\" successfully processed", msg.Content)
+		if _, err := redisClient.Publish(ctx, "message_processed", notification).Result(); err != nil {
+			log.Println("Error publishing notification:", err)
 		}
 
 		// Emit the message to the relevant room

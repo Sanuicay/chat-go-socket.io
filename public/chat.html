@@ -6,6 +6,8 @@
     <title>Chat Room</title>
 </head>
 <body>
+    <button onclick="logout()">Logout</button>
+    <button id="requestNotificationButton">Enable Notifications</button>
     <!-- a side bar for list of chat -->
     <div id="chat-sidebar">
         <h3>Chat List</h3>
@@ -22,5 +24,18 @@
     </div>
     <script src="/js/socket.io.min.js"></script>
     <script src="js/main.js"></script>
+    <script>
+        function logout() {
+            // Clear session data from local storage
+            localStorage.removeItem('sessionID');
+            localStorage.removeItem('name');
+
+            // Optionally, emit a 'Logout' event to the server if needed for any server-side cleanup
+            // socket.emit('Logout');
+
+            // Redirect back to the login/start page (index.html)
+            window.location.href = 'index.html';
+        }
+    </script>
 </body>
 </html>
