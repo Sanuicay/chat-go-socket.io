@@ -2,7 +2,11 @@
 
 This is a simple chat app (hopefully) written in Go
 
-Just run the following
+How to run:
+
+1/ Setup Redis and MySQL (use the test_1.sql file) and change the address accordingly in main.go
+
+2/ Run the following
 
 ```
 go run main.go
