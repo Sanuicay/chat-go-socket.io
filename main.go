@@ -168,7 +168,7 @@ func main() {
 		})
 
 		client.On("ShowMessages", func(chatID ...any) {
-			rows, err := db.Query("SELECT messages.message, users.name AS sender_name, messages.created_at FROM messages JOIN users ON messages.sender_id = users.id WHERE messages.chat_id = ?;", chatID[0])
+			rows, err := db.Query("SELECT messages.message, users.name AS sender_name, messages.created_at FROM messages JOIN users ON messages.sender_id = users.id WHERE messages.chat_id = ? ORDER BY messages.id;", chatID[0])
 			if err != nil {
 				log.Println(err)
 			}
@@ -213,7 +213,6 @@ func main() {
 		// client.On("CreateChat", func(args ...any) {
 		// 	chatName := args[0].(string)
 		// 	is_group := args[1].(bool)
-			
 
 		client.On("disconnect", func(...any) {
 			log.Printf("User disconnected: %s (SessionID: %s)\n", name[0], sessionID[0])

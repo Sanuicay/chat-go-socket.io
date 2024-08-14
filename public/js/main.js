@@ -112,6 +112,7 @@ function initializeChat() {
                         div.innerHTML = `<p><b>${msg.sender}</b>: ${msg.message}</p><p>${msg.createdAt}</p>`;
                     }
                     chatContent.appendChild(div);
+                    chatContent.scrollTop = chatContent.scrollHeight;
                 });
             });
 

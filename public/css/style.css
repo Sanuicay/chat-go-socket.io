@@ -1,0 +1,105 @@
+/* Basic layout and styling */
+body {
+  font-family: sans-serif;
+  margin: 0;
+  display: flex;
+}
+
+#chat-sidebar {
+  width: 250px;
+  background-color: #f0f0f0;
+  padding: 20px;
+  border-right: 1px solid #ddd;
+}
+
+#chat-box {
+  flex-grow: 1;
+  padding: 20px;
+}
+
+h3 {
+  margin-top: 0;
+}
+
+ul {
+  list-style: none;
+  padding: 0;
+}
+
+li {
+  padding: 10px;
+  cursor: pointer;
+  border-bottom: 1px solid #ddd;
+}
+
+li:hover {
+  background-color: #e0e0e0;
+}
+
+/* Chat message styling */
+#chat-content {
+  height: 450px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.message, .pending-message {
+  margin-bottom: 5px;
+  padding: 8px 12px;
+  border-radius: 5px;
+}
+
+.message {
+  background-color: #e0f7fa; /* Light blue for received messages */
+  align-self: flex-start; /* Align to the left */
+}
+
+.pending-message {
+  background-color: #fff9c4; /* Yellow for pending messages */
+  align-self: flex-end; /* Align to the right */
+}
+
+.timestamp {
+  font-size: 0.8em;
+  color: #777;
+  margin-top: 3px;
+}
+
+/* Input and button styling */
+#chat-message {
+  width: calc(100% - 100px);
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+}
+
+button {
+  padding: 10px 20px;
+  background-color: #00bcd4; /* Teal */
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+button:hover {
+  background-color: #0097a7; /* Darker teal on hover */
+}
+
+#requestNotificationButton {
+    position: absolute; 
+    top: 10px; 
+    right: 100px; 
+    padding: 5px 10px; 
+    font-size: 0.9em; 
+}
+
+#logoutButton {
+    position: absolute; 
+    top: 10px; 
+    right: 10px; 
+    padding: 5px 10px; 
+    font-size: 0.9em; 
+}
